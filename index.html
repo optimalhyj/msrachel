@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#fff6ec">
+<title>하루 한 편</title>
+<style>
+  :root{
+    --bg:#fff6ec; --card:#ffffff; --ink:#3b2f2a; --soft:#8a7a70;
+    --accent:#ff7a59; --accent2:#5bb6a5; --line:#f0e2d4; --done:#c9bfb6;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;
+    -webkit-tap-highlight-color:transparent}
+  body{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+  button{font:inherit;cursor:pointer;border:none}
+  .wrap{max-width:760px;margin:0 auto;padding:16px}
+  header{display:flex;align-items:center;justify-content:space-between;margin:4px 0 16px}
+  h1{font-size:22px;margin:0;letter-spacing:-.5px}
+  #parentBtn{position:relative;overflow:hidden;background:transparent;color:var(--soft);
+    font-size:13px;padding:8px 12px;border:1px solid var(--line);border-radius:999px;user-select:none;-webkit-user-select:none;touch-action:none}
+  #parentBtn .fill{position:absolute;inset:0;background:var(--line);transform:scaleX(0);transform-origin:left;z-index:-1}
+  #parentBtn.holding .fill{transform:scaleX(1);transition:transform 1.5s linear}
+  .card{background:var(--card);border-radius:24px;padding:18px;box-shadow:0 6px 24px rgba(120,80,40,.08)}
+  .center{text-align:center}
+  .big{display:block;width:100%;font-size:28px;font-weight:700;padding:22px;border-radius:20px;
+    background:var(--accent);color:#fff;margin-top:16px;box-shadow:0 6px 0 #e0603f}
+  .big:active{transform:translateY(3px);box-shadow:0 3px 0 #e0603f}
+  .big:disabled{background:var(--done);box-shadow:none}
+  .info{margin-top:12px;color:var(--soft);font-size:15px;line-height:1.5}
+  .info b{color:var(--ink)}
+  .emoji{font-size:72px;line-height:1;margin:8px 0}
+  .msg{font-size:24px;font-weight:700;margin:8px 0}
+
+  /* stage: preview on home, fullscreen while watching */
+  #stage{position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:16px;overflow:hidden}
+  #playerHost,#playerHost iframe{position:absolute;inset:0;width:100%;height:100%}
+  #tap{position:absolute;inset:0;z-index:2}
+  /* during YouTube ads: leave the bottom-right corner (where "Skip" appears) open for taps */
+  #stage.ad #tap{clip-path:polygon(0 0,100% 0,100% 62%,60% 62%,60% 100%,0 100%)}
+  #stage.ad #ctrl{display:none!important}
+  #adNote,#skipZone{display:none;position:absolute;z-index:4;pointer-events:none}
+  #stage.ad #adNote{display:block;top:calc(12px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);
+    background:rgba(0,0,0,.6);color:#fff;font-size:15px;padding:8px 14px;border-radius:999px;white-space:nowrap}
+  #stage.ad #skipZone{display:flex;right:0;bottom:0;width:40%;height:38%;border:3px dashed rgba(255,255,255,.55);
+    border-radius:16px 0 0 0;align-items:flex-start;justify-content:flex-start;padding:8px;color:rgba(255,255,255,.8);font-size:13px}
+  #stage.live{position:fixed;inset:0;width:100vw;height:100vh;height:100dvh;aspect-ratio:auto;border-radius:0;z-index:100}
+  #ctrl{position:absolute;left:0;right:0;bottom:0;z-index:3;display:none;align-items:center;gap:12px;
+    padding:16px calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
+    background:linear-gradient(transparent,rgba(0,0,0,.75));color:#fff}
+  #stage.live #ctrl.show{display:flex}
+  #ctrl button{background:rgba(255,255,255,.18);color:#fff;border-radius:14px;padding:12px 18px;font-size:18px;font-weight:700}
+  #ctrl .rem{flex:1;font-size:16px;opacity:.9}
+  #startHint{position:absolute;inset:0;z-index:4;display:none;align-items:center;justify-content:center;
+    background:rgba(0,0,0,.35);color:#fff;font-size:28px;font-weight:700;pointer-events:none}
+  #stage.live #startHint.show{display:flex}
+
+  #celebrate{position:fixed;inset:0;z-index:200;background:var(--bg);display:none;flex-direction:column;
+    align-items:center;justify-content:center;text-align:center;padding:24px}
+  #celebrate.show{display:flex}
+  #celebrate .emoji{font-size:110px;animation:wave 1.2s ease-in-out infinite}
+  @keyframes wave{0%,100%{transform:rotate(0)}25%{transform:rotate(18deg)}75%{transform:rotate(-12deg)}}
+
+  /* parent panel */
+  #parent h2{font-size:18px;margin:22px 0 10px}
+  #parent h2:first-of-type{margin-top:4px}
+  label{display:block;font-size:14px;color:var(--soft);margin:10px 0 4px}
+  input,textarea,select{width:100%;font:inherit;font-size:16px;padding:12px;border:1px solid var(--line);border-radius:12px;background:#fffdfb;color:var(--ink)}
+  textarea{min-height:110px;resize:vertical}
+  .btn{background:var(--accent2);color:#fff;font-weight:700;padding:12px 16px;border-radius:12px;font-size:15px}
+  .btn.ghost{background:#f4ebe2;color:var(--ink)}
+  .btn.warn{background:#f4ebe2;color:#c0442b}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+  .status{font-size:14px;margin-top:8px;color:var(--soft);min-height:1.2em}
+  .status.err{color:#c0442b}
+  .vid{border:1px solid var(--line);border-radius:16px;padding:12px;margin-top:12px}
+  .vid .t{font-weight:700;font-size:15px}
+  .vid .sub{font-size:13px;color:var(--soft);margin-top:2px}
+  .seg{display:flex;gap:8px;align-items:center;padding:8px 0;border-top:1px dashed var(--line);font-size:14px}
+  .seg:first-of-type{border-top:none}
+  .seg .n{width:26px;height:26px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:#f4ebe2}
+  .seg.done .n{background:var(--done);color:#fff}
+  .seg.next .n{background:var(--accent);color:#fff}
+  .seg .d{flex:1;min-width:0}
+  .seg .d small{display:block;color:var(--soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .seg.done .d{color:var(--done)}
+  .seg button{background:#f4ebe2;color:var(--ink);border-radius:10px;padding:6px 10px;font-size:13px;flex:none}
+  .help{font-size:13px;color:var(--soft);line-height:1.5}
+  .pickTitle{font-size:20px;font-weight:800;margin:0 0 10px}
+  .picks{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+  .pick{background:#fff;border:4px solid var(--line);border-radius:18px;padding:0;overflow:hidden;text-align:left;color:var(--ink)}
+  .pick.on{border-color:var(--accent);box-shadow:0 4px 0 #e0603f}
+  .pick img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:#eee}
+  .pick .pt{padding:8px 10px 10px;font-size:14px;font-weight:700;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .pick .ps{padding:0 10px 10px;font-size:12px;color:var(--soft)}
+  .pick .badge{display:inline-block;background:var(--accent2);color:#fff;border-radius:6px;padding:1px 6px;margin-right:4px;font-size:11px}
+  @media (max-width:520px){ .picks{grid-template-columns:repeat(3,72%);overflow-x:auto} }
+  .chips{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 14px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .chips::-webkit-scrollbar{display:none}
+  .chip{flex:none;background:#fff;border:2px solid var(--line);border-radius:999px;padding:10px 14px;font-size:16px;font-weight:700;color:var(--ink)}
+  .chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .chip small{font-weight:400;opacity:.7;margin-left:4px}
+  .switch{display:flex;align-items:center;gap:10px;font-size:15px;margin-top:6px}
+  .switch input{width:auto;transform:scale(1.3)}
+  #probe{position:fixed;left:-2000px;top:0;width:320px;height:180px;opacity:.01;pointer-events:none}
+  [hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🌈 하루 한 편</h1>
+    <button id="parentBtn" aria-label="어른용 설정 (2초간 누르기)"><span class="fill"></span>어른용 · 꾹 누르기</button>
+  </header>
+
+  <main id="home">
+    <div class="chips" id="chips"></div>
+    <div class="card" id="todayCard" hidden>
+      <div class="pickTitle" id="pickTitle">오늘은 뭐 볼까?</div>
+      <div class="picks" id="picks"></div>
+      <div id="stage">
+        <div id="playerHost"><div id="player"></div></div>
+        <div id="tap"></div>
+        <div id="startHint">▶ 화면을 눌러요</div>
+        <div id="adNote">광고가 끝나면 시작해요</div>
+        <div id="skipZone">‘건너뛰기’는 여기서 눌러요</div>
+        <div id="ctrl">
+          <button id="ppBtn">⏸</button>
+          <div class="rem" id="rem"></div>
+          <button id="closeBtn">그만 보기</button>
+        </div>
+      </div>
+      <div class="info center" id="todayInfo"></div>
+      <button class="big" id="playBtn" disabled>불러오는 중…</button>
+    </div>
+
+    <div class="card center" id="lockedCard" hidden>
+      <div class="emoji">🌙</div>
+      <div class="msg">오늘 영상은 다 봤어요!</div>
+      <div class="info">내일 또 만나요 👋<br><span id="nextHint"></span></div>
+    </div>
+
+    <div class="card center" id="emptyCard" hidden>
+      <div class="emoji">📺</div>
+      <div class="msg" id="emptyMsg">아직 영상이 없어요</div>
+      <div class="info" id="emptySub">오른쪽 위 ‘어른용’ 버튼을 2초간 꾹 눌러 영상을 추가하세요.</div>
+    </div>
+
+    <div class="status err center" id="apiErr"></div>
+  </main>
+
+  <section id="parent" hidden>
+    <div class="card">
+      <div class="row" style="justify-content:space-between;margin-top:0">
+        <h2 style="margin:0">어른용 설정</h2>
+        <button class="btn ghost" id="closeParent">닫기</button>
+      </div>
+
+      <h2>Ms Rachel 채널 자동 가져오기</h2>
+      <label class="switch"><input type="checkbox" id="inAuto"> 볼 영상이 떨어지면 채널에서 자동으로 다음 영상 가져오기</label>
+      <label for="inOrder">가져오는 순서</label>
+      <select id="inOrder"><option value="new">최신 영상부터</option><option value="old">오래된 영상부터</option><option value="random">무작위</option></select>
+      <p class="help" id="poolInfo"></p>
+      <div class="row"><button class="btn ghost" id="refreshBtn">채널 목록 새로고침</button></div>
+      <div class="status" id="autoStatus"></div>
+      <details style="margin-top:10px">
+        <summary class="help" style="cursor:pointer">내용 단위로 끊기 정확도 높이기 (선택: YouTube API 키)</summary>
+        <p class="help">API 키가 있으면 각 영상 설명란의 챕터(노래·코너 시작 시간)를 자동으로 읽어서 그 경계에서 끊고, 주제 분류도 즉시 돼요. 키가 없으면 길이를 고르게 나누고, 주제 분류는 백그라운드에서 천천히 진행돼요. 영상별로 챕터를 직접 붙여넣을 수도 있어요(아래 목록의 ‘챕터 넣기’).</p>
+        <label for="inKey">YouTube Data API v3 키</label>
+        <input id="inKey" placeholder="AIza..." autocomplete="off" spellcheck="false">
+        <div class="row"><button class="btn ghost" id="keyBtn">저장</button></div>
+      </details>
+
+      <h2>영상 직접 추가</h2>
+      <label for="inUrl">유튜브 주소 (공유 버튼 → 링크 복사)</label>
+      <input id="inUrl" placeholder="https://youtu.be/..." autocomplete="off">
+      <label for="inChap">챕터 타임스탬프 (선택) — 영상 설명란의 목록을 그대로 붙여넣기</label>
+      <textarea id="inChap" placeholder="0:00 Intro&#10;3:12 Wheels on the Bus&#10;9:45 Colors&#10;..."></textarea>
+      <label for="inDur">영상 길이 (선택 — 비워두면 자동으로 읽어요)</label>
+      <input id="inDur" placeholder="예: 1:05:30" inputmode="numeric" autocomplete="off">
+      <div class="row"><button class="btn" id="addBtn">추가하기</button></div>
+      <div class="status" id="addStatus"></div>
+      <p class="help">챕터를 넣으면 노래·코너가 바뀌는 지점 중 목표 시간에 가장 가까운 곳에서 끊어요. 챕터가 없으면 영상 길이를 고르게 나눠요.</p>
+
+      <h2>설정</h2>
+      <label for="inTarget">한 편 목표 길이</label>
+      <select id="inTarget">
+        <option value="10">약 10분</option><option value="15">약 15분</option>
+        <option value="20">약 20분</option><option value="25">약 25분</option><option value="30">약 30분</option>
+      </select>
+      <div class="row">
+        <button class="btn ghost" id="extraBtn">오늘 한 편 더 허용</button>
+      </div>
+      <div class="status" id="setStatus"></div>
+
+      <h2>영상 목록</h2>
+      <div id="list"></div>
+
+      <h2>문제 진단 기록</h2>
+      <p class="help">영상이 이상하게 동작하면 ‘복사’를 눌러 Claude에게 붙여넣어 주세요. 플레이어가 보고한 상태가 기록돼 있어요. <span id="verLabel"></span></p>
+      <textarea id="diagBox" readonly spellcheck="false" style="font-size:12px;min-height:90px"></textarea>
+      <div class="row"><button class="btn ghost" id="diagCopy">복사</button><button class="btn ghost" id="diagClear">기록 지우기</button></div>
+
+      <h2>백업 / 다른 기기로 옮기기</h2>
+      <p class="help">기록은 이 기기 브라우저에만 저장돼요. 다른 기기로 옮기려면 아래 내용을 복사해서 그 기기의 같은 칸에 붙여넣고 ‘불러오기’를 누르세요.</p>
+      <textarea id="backup" spellcheck="false"></textarea>
+      <div class="row">
+        <button class="btn ghost" id="copyBtn">복사</button>
+        <button class="btn ghost" id="importBtn">불러오기</button>
+      </div>
+      <div class="status" id="bkStatus"></div>
+    </div>
+  </section>
+</div>
+
+<div id="celebrate">
+  <div class="emoji">👋</div>
+  <div class="msg" style="font-size:30px">오늘 영상 끝!</div>
+  <div class="info" style="font-size:18px">정말 잘 봤어요. 내일 또 보자!</div>
+  <button class="big" id="celebrateOk" style="max-width:320px;background:var(--accent2);box-shadow:0 6px 0 #3f9483">좋아요</button>
+</div>
+
+<div id="probe"></div>
+
+<script>
+(function(){
+  'use strict';
+  var KEY = 'harupyeon.v1';
+  var YT_HOST = 'https://www.youtube-nocookie.com';
+  var $ = function(id){ return document.getElementById(id); };
+
+  // ---------- state ----------
+  // Ms Rachel - Toddler Learning Videos (@msrachel) channel UCG2CL6EUjG8TVT1Tpl9nJdg → uploads playlist "UU..."
+  var UPLOADS = 'UUG2CL6EUjG8TVT1Tpl9nJdg';
+  var MIN_LEN = 10*60; // skip Shorts / short clips
+  function blank(){ return {target:20, videos:[], doneDate:null, allowDate:null, resume:null,
+    auto:true, pool:[], poolDate:null, skip:[], order:'new', apiKey:'', topic:'all', meta:{}}; }
+  // topics matched against (English) video titles
+  var TOPICS = [
+    {k:'all', e:'🌈', n:'전체', r:/./},
+    {k:'words', e:'🗣️', n:'첫 단어·말하기', r:/first words|speech|talk|baby learning|sign language|milestone|babbl/i},
+    {k:'colors', e:'🎨', n:'색깔', r:/colou?rs?\b|rainbow/i},
+    {k:'animals', e:'🐮', n:'동물', r:/animal|farm|zoo|dinosaur|\bpets?\b|bugs?\b|ocean|fish|duck|bunn/i},
+    {k:'numbers', e:'🔢', n:'숫자', r:/number|count|math|\b123\b/i},
+    {k:'letters', e:'🔤', n:'알파벳', r:/\babc\b|letter|phonics|alphabet|reading/i},
+    {k:'shapes', e:'🔺', n:'모양', r:/shape/i},
+    {k:'feelings', e:'💛', n:'감정·사회성', r:/feeling|emotion|social|kind|sharing|friend/i},
+    {k:'routine', e:'🪥', n:'생활습관', r:/potty|bedtime|\bbath|brush|routine|sleep|daily|healthy|food|eat/i},
+    {k:'body', e:'🙌', n:'몸', r:/body|head,? shoulders|\bparts\b/i},
+    {k:'seasons', e:'🎄', n:'계절·명절', r:/christmas|halloween|thanksgiving|easter|valentine|holiday|winter|spring|summer|\bfall\b|season|snow/i},
+    {k:'music', e:'🎵', n:'동요·율동', r:/nursery rhyme|kids songs|dance|music|sing/i}
+  ];
+  function topicOk(title, k){ if(!k || k === 'all') return true; var t = TOPICS.find(function(x){ return x.k === k; }); return !!(t && t.r.test(title||'')); }
+  function load(){
+    try{ var s = JSON.parse(localStorage.getItem(KEY)); if(s && Array.isArray(s.videos)) return Object.assign(blank(), s); }catch(e){}
+    return blank();
+  }
+  var S = load();
+  function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
+  function today(){ var d=new Date(); return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate(); }
+  function locked(){ return S.doneDate === today() && S.allowDate !== today(); }
+
+  // ---------- helpers ----------
+  function parseId(str){
+    str = (str||'').trim();
+    if(/^[A-Za-z0-9_-]{11}$/.test(str)) return str;
+    var m = str.match(/(?:youtu\.be\/|[?&]v=|\/shorts\/|\/live\/|\/embed\/)([A-Za-z0-9_-]{11})/);
+    return m ? m[1] : null;
+  }
+  function parseTime(t){
+    if(!t) return NaN;
+    var p = String(t).trim().split(':').map(Number);
+    if(p.some(isNaN) || p.length < 2 || p.length > 3) return NaN;
+    return p.length === 3 ? p[0]*3600 + p[1]*60 + p[2] : p[0]*60 + p[1];
+  }
+  function fmt(sec){
+    sec = Math.max(0, Math.round(sec));
+    var h = Math.floor(sec/3600), m = Math.floor(sec%3600/60), s = sec%60;
+    var mm = h ? String(m).padStart(2,'0') : String(m);
+    return (h ? h+':' : '') + mm + ':' + String(s).padStart(2,'0');
+  }
+  function parseChapters(text){
+    var out = [];
+    (text||'').split(/\r?\n/).forEach(function(line){
+      var m = line.match(/(?:^|[\s(\[])((?:\d{1,2}:)?\d{1,2}:\d{2})(?=[\s)\]\-–—:|]|$)/);
+      if(!m) return;
+      var t = parseTime(m[1]);
+      if(isNaN(t)) return;
+      var title = line.replace(m[1],'').replace(/\(\s*\)|\[\s*\]/g,'').replace(/^[\s\-–—:|.]+|[\s\-–—:|]+$/g,'').trim();
+      out.push({t:t, title:title});
+    });
+    out.sort(function(a,b){ return a.t-b.t; });
+    return out.filter(function(c,i){ return i===0 || c.t !== out[i-1].t; });
+  }
+  function esc(s){ return String(s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+
+  // Split a video into ~target-minute segments, cutting at chapter boundaries when available.
+  function split(v, targetMin){
+    var dur = v.dur, T = targetMin*60, segs = [];
+    if(!(dur > 0)) return segs;
+    var ch = (v.chapters||[]).filter(function(c){ return c.t > 0 && c.t < dur; }).map(function(c){ return c.t; });
+    if(ch.length){
+      var s = 0;
+      while(dur - s > T*1.4){
+        var lo = s + T*0.6, hi = s + T*1.5, best = null;
+        ch.forEach(function(b){
+          if(b > lo && b < hi && (best === null || Math.abs(b-(s+T)) < Math.abs(best-(s+T)))) best = b;
+        });
+        var cut = best !== null ? best : s + T;
+        if(dur - cut < T*0.5) break;
+        segs.push([s,cut]); s = cut;
+      }
+      segs.push([s,dur]);
+    } else {
+      var n = Math.max(1, Math.round(dur/T)), len = dur/n;
+      for(var i=0;i<n;i++) segs.push([Math.round(i*len), i===n-1 ? dur : Math.round((i+1)*len)]);
+    }
+    return segs.map(function(p, i){
+      var titles = (v.chapters||[]).filter(function(c){ return c.title && c.t >= p[0]-1 && c.t < p[1]-1; }).map(function(c){ return c.title; });
+      if(!titles.length){
+        var cover = (v.chapters||[]).filter(function(c){ return c.title && c.t <= p[0]; }).pop();
+        if(cover) titles = [cover.title];
+      }
+      return {i:i, n:segs.length, s:p[0], e:p[1], titles:titles};
+    });
+  }
+  function isDone(v, seg){ return seg.e <= (v.watchedTo||0) + 1; }
+  var NCHOICE = 3;
+  // every video (in the chosen topic) that still has an unwatched part → its next part
+  function choicesAll(){
+    var out = [];
+    S.videos.forEach(function(v){
+      if(!topicOk(v.title, S.topic)) return;
+      var ss = split(v, S.target);
+      for(var b=0;b<ss.length;b++) if(!isDone(v, ss[b])){ out.push({v:v, seg:ss[b]}); break; }
+    });
+    // a video that was started stays among the options
+    var started = function(c){ return (c.v.watchedTo > 0 || (S.resume && S.resume.vid === c.v.id)) ? 1 : 0; };
+    out.sort(function(a,b){ return started(b) - started(a); });
+    return out;
+  }
+  function choices(){ return choicesAll().slice(0, NCHOICE); }
+  function nextUp(){
+    var cs = choices();
+    return cs.find(function(c){ return c.v.id === S.pick; }) || cs[0] || null;
+  }
+  function segText(seg){
+    var mins = Math.round((seg.e-seg.s)/60);
+    var t = seg.titles.length ? seg.titles[0] + (seg.titles.length > 1 ? ' 외 '+(seg.titles.length-1)+'곡' : '') : '';
+    return {mins:mins, label:t};
+  }
+
+  // ---------- YouTube API ----------
+  var ytReady = false, player = null, playerKey = null, curr = null, ticker = null, finished = false, lastSave = 0, ctrlTimer = null;
+  window.onYouTubeIframeAPIReady = function(){ ytReady = true; render(); };
+  var probeSeq = 0;
+  function probeDiv(){ var id = 'probeP' + (++probeSeq), d = document.createElement('div'); d.id = id; $('probe').appendChild(d); return id; }
+
+  // --- auto mode: channel uploads ---
+  function isoDur(s){ var m = String(s||'').match(/P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/); if(!m) return 0;
+    return (+m[1]||0)*86400 + (+m[2]||0)*3600 + (+m[3]||0)*60 + (+m[4]||0); }
+  function fetchPlaylistIds(){
+    if(S.apiKey){
+      var ids = [], page = '', n = 0;
+      var step = function(){
+        return fetch('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&maxResults=50&playlistId=' + UPLOADS + '&key=' + encodeURIComponent(S.apiKey) + (page ? '&pageToken=' + page : ''))
+          .then(function(r){ return r.json(); }).then(function(j){
+            if(j.error) throw new Error(j.error.message);
+            (j.items||[]).forEach(function(it){
+              var vid = it.contentDetails.videoId; ids.push(vid);
+              if(it.snippet && !S.meta[vid]) S.meta[vid] = {t: it.snippet.title, d: 0};
+            });
+            page = j.nextPageToken; n++;
+            return page && n < 6 ? step() : ids;
+          });
+      };
+      return step();
+    }
+    return new Promise(function(resolve){
+      if(!ytReady){ resolve([]); return; }
+      var p, done = false, vars = baseVars();
+      vars.listType = 'playlist'; vars.list = UPLOADS;
+      function fin(ids){ if(done) return; done = true; try{ p.destroy(); }catch(e){} resolve(ids||[]); }
+      p = new YT.Player(probeDiv(), {host: YT_HOST, width:320, height:180, playerVars: vars, events: {
+        onReady: function(){ var k = 0, iv = setInterval(function(){
+          var ids = null; try{ ids = p.getPlaylist(); }catch(e){}
+          if(ids && ids.length){ clearInterval(iv); fin(ids); } else if(++k > 24){ clearInterval(iv); fin([]); }
+        }, 500); },
+        onError: function(){ fin([]); }
+      }});
+      setTimeout(function(){ fin([]); }, 20000);
+    });
+  }
+  function apiInfo(id){
+    return fetch('https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=' + id + '&key=' + encodeURIComponent(S.apiKey))
+      .then(function(r){ return r.json(); }).then(function(j){
+        var it = j.items && j.items[0]; if(!it) return {dur:0, title:''};
+        return {dur: isoDur(it.contentDetails.duration), title: it.snippet.title, chapters: parseChapters(it.snippet.description)};
+      });
+  }
+  function getInfo(id){
+    return (S.apiKey ? apiInfo(id).catch(function(){ return probe(id); }) : probe(id)).then(function(r){
+      if(r.dur > 0) { S.meta[id] = {t:r.title||'', d:Math.round(r.dur)}; save(); }
+      return r;
+    });
+  }
+  // quietly learn titles/lengths of channel videos so topics can be filtered (one at a time, only when idle)
+  var indexing = false;
+  function indexStep(){
+    if(indexing || !ytReady || !S.auto || S.apiKey || $('stage').classList.contains('live') || document.hidden) return;
+    var id = S.pool.find(function(x){ return !S.meta[x] && S.skip.indexOf(x) < 0; });
+    if(!id) return;
+    indexing = true;
+    probe(id).then(function(r){
+      if(r.dur > 0) S.meta[id] = {t:r.title||'', d:Math.round(r.dur)};
+      else if(r.err) S.skip.push(id);
+      save(); indexing = false;
+      if(!$('parent').hidden) renderTopicCounts();
+      renderChips();
+    });
+  }
+  setInterval(indexStep, 4000);
+
+  var autoBusy = false, autoMsg = '';
+  function refreshPool(force){
+    if(!force && S.pool.length && S.poolDate === today()) return Promise.resolve();
+    return fetchPlaylistIds().then(function(ids){
+      if(ids.length){ S.pool = ids; S.poolDate = today(); save(); }
+    }).catch(function(e){ autoMsg = '채널 목록을 못 불러왔어요: ' + e.message; });
+  }
+  function ensureQueue(){
+    if(!S.auto || autoBusy) return;
+    var need = NCHOICE - choicesAll().length;
+    if(need <= 0) return;
+    autoBusy = true; autoMsg = ''; render();
+    refreshPool(false).then(function(){
+      var have = {}; S.videos.forEach(function(v){ have[v.id] = 1; }); S.skip.forEach(function(id){ have[id] = 1; });
+      var cand = S.pool.filter(function(id){
+        if(have[id]) return false;
+        var m = S.meta[id];
+        if(m && m.d && m.d < MIN_LEN) return false;
+        if(m && m.t && !topicOk(m.t, S.topic)) return false;
+        return true;
+      });
+      // known matches first, unknown titles after
+      cand.sort(function(a,b){ return (S.meta[a] && S.meta[a].t ? 0 : 1) - (S.meta[b] && S.meta[b].t ? 0 : 1); });
+      if(S.order === 'old') cand.reverse();
+      if(S.order === 'random') cand.sort(function(){ return Math.random() - .5; });
+      var tries = 0, added = 0;
+      var tryNext = function(){
+        if(added >= need) return;
+        if(!cand.length || tries++ >= 30){
+          if(added || choicesAll().length){ autoMsg = autoMsg || 'partial'; return; }
+          if(!autoMsg) autoMsg = cand.length ? '영상 정보를 읽는 데 시간이 걸리고 있어요.'
+            : S.topic !== 'all' ? '이 주제의 새 영상을 찾지 못했어요. 다른 주제를 골라 보세요.' : '채널에서 새로 가져올 영상이 없어요.';
+          return;
+        }
+        var id = cand.shift();
+        return getInfo(id).then(function(r){
+          if(!(r.dur >= MIN_LEN)){ if(r.dur > 0 || r.err) { S.skip.push(id); save(); } return tryNext(); }
+          if(!topicOk(r.title, S.topic)) return tryNext();
+          S.videos.push({id:id, title:r.title||'', dur:r.dur, chapters:r.chapters||[], watchedTo:0, auto:true});
+          save(); added++;
+          return tryNext();
+        });
+      };
+      return tryNext();
+    }).then(function(){ autoBusy = false; render(); if(!$('parent').hidden) renderParent(); },
+            function(){ autoBusy = false; render(); });
+  }
+  (function(){
+    var s = document.createElement('script');
+    s.src = 'https://www.youtube.com/iframe_api';
+    s.onerror = function(){ $('apiErr').textContent = '유튜브 플레이어를 불러오지 못했어요. 인터넷 연결을 확인해 주세요.'; };
+    document.head.appendChild(s);
+    setTimeout(function(){ if(!ytReady && !$('apiErr').textContent) $('apiErr').textContent = '유튜브 플레이어 로딩이 늦어지고 있어요. 새로고침해 보세요.'; }, 12000);
+  })();
+  function baseVars(){
+    var v = {playsinline:1, rel:0, modestbranding:1, iv_load_policy:3, disablekb:1, fs:0, controls:0};
+    if(/^https?:$/.test(location.protocol)) v.origin = location.origin;
+    return v;
+  }
+
+  function destroyPlayer(){
+    clearInterval(ticker); ticker = null;
+    if(player){ try{ player.destroy(); }catch(e){} }
+    player = null; playerKey = null; curr = null;
+    $('playerHost').innerHTML = '<div id="player"></div>';
+  }
+
+  function buildPlayer(n){
+    var startAt = n.seg.s;
+    if(S.resume && S.resume.vid === n.v.id && S.resume.t > n.seg.s + 3 && S.resume.t < n.seg.e - 10) startAt = Math.floor(S.resume.t);
+    var key = n.v.id + ':' + n.seg.s + ':' + n.seg.e + ':' + startAt;
+    if(player && playerKey === key) return;
+    destroyPlayer();
+    playerKey = key; finished = false;
+    curr = {v:n.v, seg:n.seg, startAt:startAt, ready:false};
+    resetTrack();
+    var vars = baseVars();
+    vars.start = Math.floor(startAt);
+    vars.end = Math.ceil(n.seg.e);
+    player = new YT.Player('player', {
+      host: YT_HOST, videoId: n.v.id, playerVars: vars,
+      events: {
+        onReady: function(){ if(curr){ curr.ready = true; } updatePlayBtn(); },
+        onStateChange: onState,
+        onError: function(e){
+          var c = e.data, msg = '이 영상은 재생할 수 없어요 (오류 '+c+').';
+          if(c === 101 || c === 150) msg = '이 영상은 채널 설정상 외부 재생이 막혀 있어요. 다른 영상을 추가해 주세요.';
+          if(c === 153) msg = '플레이어 설정 오류(153)예요. 이 페이지를 https 주소로 열었는지 확인해 주세요.';
+          $('apiErr').textContent = msg;
+        }
+      }
+    });
+  }
+
+  function onState(e){
+    if(!curr) return;
+    if(e.data === YT.PlayerState.PLAYING){ $('startHint').classList.remove('show'); $('ppBtn').textContent = '⏸'; }
+    if(e.data === YT.PlayerState.PAUSED){ $('ppBtn').textContent = '▶'; }
+    // only count it as finished if the real video actually got near the end of today's part
+    if(e.data === YT.PlayerState.ENDED && lastT !== null && lastT >= curr.seg.e - 20){ finish(); }
+  }
+
+  // --- ad-aware progress tracking ---
+  // lastT = last trusted position in the real video. Ads make the reported time/duration jump or freeze,
+  // so those readings are ignored (no false "finished", no resume point saved inside an ad).
+  var lastT = null, lastAdv = 0, okSince = 0, userPaused = false, adMode = false;
+  function resetTrack(){ lastT = null; lastAdv = Date.now(); okSince = 0; userPaused = false; setAd(false); }
+  function setAd(on){
+    if(adMode === on) return;
+    adMode = on;
+    $('stage').classList.toggle('ad', on);
+  }
+  // diagnostics: what the YouTube player reported, so problems can be sent to Claude
+  var VERSION = '2026-11-08c', diag = [], diagLast = '';
+  try{ diag = JSON.parse(localStorage.getItem('harupyeon.diag')) || []; }catch(e){}
+  function dlog(msg){
+    var d = new Date(), ts = d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0') + ':' + String(d.getSeconds()).padStart(2,'0');
+    diag.push(ts + ' ' + msg); if(diag.length > 300) diag = diag.slice(-300);
+    try{ localStorage.setItem('harupyeon.diag', JSON.stringify(diag)); }catch(e){}
+  }
+  function tick(){
+    if(!player || !curr || !player.getCurrentTime) return;
+    var t = 0, d = 0, st = -1, now = Date.now();
+    try{ t = player.getCurrentTime() || 0; d = player.getDuration() || 0; st = player.getPlayerState(); }catch(e){ return; }
+    var durMismatch = d > 0 && curr.v.dur > 0 && Math.abs(d - curr.v.dur) > 5;
+    var expected = lastT === null ? curr.startAt : lastT;
+    var good = !durMismatch && t >= expected - 1.5 && t <= expected + 6;
+    if(good){
+      if(lastT === null) lastT = t;
+      else if(t > lastT + 0.05){ lastT = t; lastAdv = now; }
+    } else if(!durMismatch && t > curr.seg.s - 1 && t < curr.seg.e + 1){
+      // unexpected jump that then plays on steadily for a few seconds → accept as the new position
+      curr._jump = curr._jump && Math.abs(t - curr._jump.t - (now - curr._jump.at)/1000) < 2 ? curr._jump : {t:t, at:now};
+      if(now - curr._jump.at > 4000){ lastT = t; lastAdv = now; curr._jump = null; dlog('accept-jump ' + t.toFixed(1)); }
+    }
+    // after an ad the player sometimes restarts the video from the beginning → jump back to where we were
+    if(!durMismatch && st === 1 && t < curr.seg.s - 5 && now - (curr._seekAt||0) > 3000){
+      curr._seekAt = now; dlog('seek-fix ' + t.toFixed(1) + ' -> ' + (lastT !== null ? lastT : curr.startAt));
+      try{ player.seekTo(lastT !== null ? lastT : curr.startAt, true); }catch(e){}
+    }
+    // block the screen only while the real video is confirmed to be playing; otherwise (ad, loading)
+    // open the bottom-right corner so "Skip" can be tapped
+    var mainPlaying = good && st === 1 && now - lastAdv < 1500;
+    setAd(!mainPlaying && !userPaused);
+    if(mainPlaying) $('startHint').classList.remove('show');
+    var sig = 'st=' + st + ' d=' + Math.round(d) + ' ad=' + (adMode ? 1 : 0) + ' good=' + (good ? 1 : 0);
+    if(sig !== diagLast || now % 10000 < 500){ diagLast = sig; dlog(sig + ' t=' + t.toFixed(1) + ' last=' + (lastT === null ? '-' : lastT.toFixed(1))); }
+    if(lastT !== null && lastT >= curr.seg.e - 0.4){ dlog('finish'); finish(); return; }
+    $('rem').textContent = adMode ? '광고 또는 불러오는 중' : '남은 시간 ' + fmt(curr.seg.e - Math.max(lastT === null ? curr.startAt : lastT, curr.seg.s));
+    if(mainPlaying && now - lastSave > 5000 && lastT > curr.seg.s){
+      lastSave = now; S.resume = {vid:curr.v.id, t:lastT}; save();
+    }
+  }
+
+  function enterLive(){
+    var st = $('stage');
+    st.classList.add('live');
+    document.body.style.overflow = 'hidden';
+    try{
+      if(st.requestFullscreen) st.requestFullscreen().catch(function(){});
+      else if(st.webkitRequestFullscreen) st.webkitRequestFullscreen();
+    }catch(e){}
+    try{ if(screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(function(){}); }catch(e){}
+    showCtrl();
+    lastAdv = Date.now(); userPaused = false;
+    dlog('play ' + curr.v.id + ' seg ' + curr.seg.s + '-' + curr.seg.e + ' start ' + curr.startAt + ' v' + VERSION);
+    clearInterval(ticker); ticker = setInterval(tick, 500);
+    // if autoplay was blocked, ask for one more tap
+    setTimeout(function(){
+      try{ if(player && player.getPlayerState && player.getPlayerState() !== 1 && !finished) $('startHint').classList.add('show'); }catch(e){}
+    }, 1500);
+  }
+  function exitLive(){
+    setAd(false);
+    $('stage').classList.remove('live');
+    $('startHint').classList.remove('show');
+    $('ctrl').classList.remove('show');
+    document.body.style.overflow = '';
+    try{
+      if(document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function(){});
+      else if(document.webkitFullscreenElement && document.webkitExitFullscreen) document.webkitExitFullscreen();
+    }catch(e){}
+    clearInterval(ticker); ticker = null;
+  }
+  function showCtrl(){
+    $('ctrl').classList.add('show');
+    clearTimeout(ctrlTimer);
+    ctrlTimer = setTimeout(function(){ $('ctrl').classList.remove('show'); }, 3500);
+  }
+
+  function finish(){
+    if(finished || !curr) return;
+    finished = true;
+    try{ player.pauseVideo(); }catch(e){}
+    var v = S.videos.find(function(x){ return x.id === curr.v.id; });
+    if(v) v.watchedTo = Math.max(v.watchedTo||0, curr.seg.e);
+    S.resume = null; S.pick = null; autoMsg = '';
+    if(S.allowDate === today()) S.allowDate = null;
+    S.doneDate = today();
+    save();
+    exitLive();
+    destroyPlayer();
+    $('celebrate').classList.add('show');
+    render();
+  }
+
+  function play(){
+    if(!player || !curr || !curr.ready || locked()) return;
+    enterLive();
+    try{ player.playVideo(); }catch(e){}
+  }
+
+  // ---------- UI wiring ----------
+  $('playBtn').addEventListener('click', play);
+  $('tap').addEventListener('click', function(){
+    if(!$('stage').classList.contains('live')){ play(); return; }
+    try{ var ps = player.getPlayerState(); if(ps === -1 || ps === 5 || (ps === 2 && !userPaused)){ userPaused = false; lastAdv = Date.now(); player.playVideo(); } }catch(e){}
+    $('startHint').classList.remove('show');
+    showCtrl();
+  });
+  $('ppBtn').addEventListener('click', function(){
+    if(!player) return;
+    try{ if(player.getPlayerState() === 1){ userPaused = true; player.pauseVideo(); } else { userPaused = false; lastAdv = Date.now(); player.playVideo(); } }catch(e){}
+    showCtrl();
+  });
+  $('closeBtn').addEventListener('click', function(){
+    try{ userPaused = true; player.pauseVideo(); if(curr && lastT !== null && !adMode){ S.resume = {vid:curr.v.id, t:lastT}; save(); } }catch(e){}
+    exitLive(); render();
+  });
+  $('celebrateOk').addEventListener('click', function(){ $('celebrate').classList.remove('show'); });
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden && !$('stage').classList.contains('live')){ autoMsg = ''; render(); } });
+
+  // long-press for parent panel
+  (function(){
+    var b = $('parentBtn'), t = null;
+    function start(e){ e.preventDefault(); b.classList.add('holding'); t = setTimeout(function(){ b.classList.remove('holding'); openParent(); }, 1500); }
+    function stop(){ clearTimeout(t); b.classList.remove('holding'); }
+    b.addEventListener('pointerdown', start);
+    ['pointerup','pointerleave','pointercancel'].forEach(function(ev){ b.addEventListener(ev, stop); });
+    b.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+  })();
+  function openParent(){ $('home').hidden = true; $('parent').hidden = false; renderParent(); window.scrollTo(0,0); }
+  $('closeParent').addEventListener('click', function(){ $('parent').hidden = true; $('home').hidden = false; render(); });
+
+  // ---------- render: kid screen ----------
+  function updatePlayBtn(){
+    var b = $('playBtn');
+    if(curr && curr.ready){ b.disabled = false; b.textContent = curr.startAt > curr.seg.s ? '▶ 이어서 보기' : '▶ 오늘의 영상 보기'; }
+    else { b.disabled = true; b.textContent = '불러오는 중…'; }
+  }
+  function topicCount(k){
+    var seen = {}, c = 0;
+    S.videos.forEach(function(v){ seen[v.id] = 1; if(topicOk(v.title, k)) c++; });
+    Object.keys(S.meta).forEach(function(id){ var m = S.meta[id]; if(!seen[id] && S.pool.indexOf(id) >= 0 && m.t && (!m.d || m.d >= MIN_LEN) && topicOk(m.t, k)) c++; });
+    return c;
+  }
+  function renderChips(){
+    var box = $('chips');
+    if(locked() || !$('parent').hidden){ box.hidden = true; return; }
+    box.hidden = false;
+    box.innerHTML = TOPICS.map(function(t){
+      var c = t.k === 'all' ? '' : topicCount(t.k);
+      if(t.k !== 'all' && !c && S.topic !== t.k) return '';
+      return '<button class="chip' + (S.topic === t.k ? ' on' : '') + '" data-k="' + t.k + '">' + t.e + ' ' + t.n + (c ? '<small>' + c + '</small>' : '') + '</button>';
+    }).join('');
+  }
+  $('picks').addEventListener('click', function(e){
+    var b = e.target.closest('.pick'); if(!b) return;
+    S.pick = b.dataset.id; save(); render();
+  });
+  $('chips').addEventListener('click', function(e){
+    var b = e.target.closest('.chip'); if(!b) return;
+    S.topic = b.dataset.k; autoMsg = ''; save(); render();
+  });
+  function renderTopicCounts(){
+    var known = S.pool.filter(function(id){ return S.meta[id]; }).length;
+    $('poolInfo').textContent = S.pool.length
+      ? '채널 영상 ' + S.pool.length + '개 확인됨 · 제목 파악 ' + known + '개' + (known < S.pool.length && !S.apiKey ? ' (백그라운드에서 계속 파악 중)' : '')
+      : '아직 채널 목록을 불러오지 않았어요.';
+  }
+
+  function render(){
+    renderChips();
+    var n = nextUp();
+    $('todayCard').hidden = $('lockedCard').hidden = $('emptyCard').hidden = true;
+    if(!n && S.auto && !locked()){
+      if(ytReady && !autoBusy && !autoMsg) setTimeout(ensureQueue, 0);
+      if(autoBusy || !autoMsg){
+        $('emptyMsg').textContent = '새 영상을 준비하고 있어요…';
+        $('emptySub').textContent = 'Ms Rachel 채널에서 다음 영상을 가져오는 중이에요.';
+        $('emptyCard').hidden = false; destroyPlayer(); return;
+      }
+      $('emptyMsg').textContent = '영상을 가져오지 못했어요';
+      $('emptySub').textContent = autoMsg + ' 어른용 설정에서 다시 시도할 수 있어요.';
+      $('emptyCard').hidden = false; destroyPlayer(); return;
+    }
+    if(!S.videos.length){
+      $('emptyMsg').textContent = '아직 영상이 없어요';
+      $('emptySub').textContent = '오른쪽 위 ‘어른용’ 버튼을 2초간 꾹 눌러 영상을 추가하세요.';
+      $('emptyCard').hidden = false; destroyPlayer(); return;
+    }
+    if(locked()){
+      $('nextHint').textContent = '내일 또 골라서 봐요.';
+      $('lockedCard').hidden = false; destroyPlayer(); return;
+    }
+    if(!n){
+      $('emptyMsg').textContent = '준비된 영상을 다 봤어요!';
+      $('emptySub').textContent = '어른에게 새 영상을 추가해 달라고 해요.';
+      $('emptyCard').hidden = false; destroyPlayer(); return;
+    }
+    // options for the child to pick from
+    var cs = choices();
+    $('pickTitle').hidden = $('picks').hidden = cs.length < 2;
+    $('picks').innerHTML = cs.map(function(c){
+      var t = segText(c.seg), started = c.v.watchedTo > 0 || (S.resume && S.resume.vid === c.v.id);
+      return '<button class="pick' + (c.v.id === n.v.id ? ' on' : '') + '" data-id="' + c.v.id + '">' +
+        '<img alt="" loading="lazy" src="https://i.ytimg.com/vi/' + c.v.id + '/mqdefault.jpg">' +
+        '<div class="pt">' + esc(c.v.title || '영상') + '</div>' +
+        '<div class="ps">' + (started ? '<span class="badge">이어보기</span>' : '') + (c.seg.i+1) + '/' + c.seg.n + '편 · ' + t.mins + '분</div></button>';
+    }).join('');
+    if(S.auto && ytReady && !autoBusy && !autoMsg && choicesAll().length < NCHOICE) setTimeout(ensureQueue, 0);
+    var st = segText(n.seg);
+    $('todayInfo').innerHTML = '<b>' + esc(n.v.title || '영상') + '</b><br>' +
+      (n.seg.i+1) + ' / ' + n.seg.n + '편 · 약 ' + st.mins + '분' + (st.label ? ' · ' + esc(st.label) : '');
+    $('todayCard').hidden = false;
+    if(ytReady) buildPlayer(n);
+    updatePlayBtn();
+  }
+
+  // ---------- render: parent panel ----------
+  function renderParent(){
+    $('inTarget').value = String(S.target);
+    $('inAuto').checked = !!S.auto;
+    $('inOrder').value = S.order;
+    $('inKey').value = S.apiKey || '';
+    renderTopicCounts();
+    $('diagBox').value = diag.join('\n');
+    $('verLabel').textContent = '(버전 ' + VERSION + ')';
+    $('backup').value = JSON.stringify(S);
+    var n = nextUp(), html = '';
+    if(!S.videos.length) html = '<p class="help">아직 추가한 영상이 없어요.</p>';
+    S.videos.forEach(function(v, vi){
+      var ss = split(v, S.target);
+      html += '<div class="vid"><div class="t">' + esc(v.title || v.id) + '</div>' +
+        '<div class="sub">' + fmt(v.dur) + ' · ' + ss.length + '편 · ' + (v.chapters && v.chapters.length ? '챕터 ' + v.chapters.length + '개 기준' : '균등 분할') + '</div>' +
+        '<div class="row"><button class="btn ghost" data-act="up" data-v="'+vi+'">▲</button>' +
+        '<button class="btn ghost" data-act="down" data-v="'+vi+'">▼</button>' +
+        '<button class="btn ghost" data-act="chap" data-v="'+vi+'">챕터 넣기</button>' +
+        '<a class="btn ghost" style="text-decoration:none" href="https://www.youtube.com/watch?v=' + v.id + '" target="_blank" rel="noopener">설명란 보기</a>' +
+        '<button class="btn warn" data-act="del" data-v="'+vi+'">삭제</button></div>' +
+        '<div data-chapbox="'+vi+'" hidden><textarea placeholder="설명란의 타임스탬프 목록을 붙여넣으세요">' +
+        esc((v.chapters||[]).map(function(c){ return fmt(c.t) + ' ' + c.title; }).join('\n')) + '</textarea>' +
+        '<div class="row"><button class="btn" data-act="chapsave" data-v="'+vi+'">챕터 저장</button></div></div>' +
+        '<div style="margin-top:8px">';
+      ss.forEach(function(seg){
+        var done = isDone(v, seg), isNext = n && n.v === v && n.seg.s === seg.s;
+        var st = segText(seg);
+        html += '<div class="seg' + (done ? ' done' : '') + (isNext ? ' next' : '') + '">' +
+          '<span class="n">' + (done ? '✓' : seg.i+1) + '</span>' +
+          '<span class="d">' + fmt(seg.s) + ' – ' + fmt(seg.e) + ' (' + st.mins + '분)' + (isNext ? ' · <b>다음</b>' : '') +
+          (seg.titles.length ? '<small>' + esc(seg.titles.join(' · ')) + '</small>' : '') + '</span>' +
+          (isNext ? '' : '<button data-act="from" data-v="'+vi+'" data-s="'+seg.s+'">여기부터</button>') + '</div>';
+      });
+      html += '</div></div>';
+    });
+    $('list').innerHTML = html;
+  }
+
+  $('list').addEventListener('click', function(e){
+    var b = e.target.closest('button[data-act]'); if(!b) return;
+    var vi = +b.dataset.v, act = b.dataset.act, arr = S.videos;
+    if(act === 'up' && vi > 0){ arr.splice(vi-1, 0, arr.splice(vi,1)[0]); }
+    else if(act === 'down' && vi < arr.length-1){ arr.splice(vi+1, 0, arr.splice(vi,1)[0]); }
+    else if(act === 'del'){
+      if(b.dataset.confirm !== '1'){ b.dataset.confirm = '1'; b.textContent = '정말 삭제?'; return; }
+      arr.splice(vi,1);
+    }
+    else if(act === 'chap'){
+      var box = document.querySelector('[data-chapbox="'+vi+'"]'); box.hidden = !box.hidden; return;
+    }
+    else if(act === 'chapsave'){
+      var ta = document.querySelector('[data-chapbox="'+vi+'"] textarea');
+      arr[vi].chapters = parseChapters(ta.value); S.resume = null;
+    }
+    else if(act === 'from'){
+      var s = +b.dataset.s;
+      arr.forEach(function(v, i){ if(i < vi) v.watchedTo = v.dur; else if(i === vi) v.watchedTo = s; });
+      S.resume = null;
+    }
+    save(); renderParent();
+  });
+
+  $('inTarget').addEventListener('change', function(){
+    S.target = +$('inTarget').value; S.resume = null; save(); renderParent();
+    $('setStatus').textContent = '한 편 길이를 약 ' + S.target + '분으로 바꿨어요. 이미 본 부분은 그대로 유지돼요.';
+  });
+  $('inAuto').addEventListener('change', function(){ S.auto = $('inAuto').checked; autoMsg = ''; save(); });
+  $('inOrder').addEventListener('change', function(){ S.order = $('inOrder').value; save(); });
+  $('keyBtn').addEventListener('click', function(){
+    S.apiKey = $('inKey').value.trim(); save();
+    if(!S.apiKey){ $('autoStatus').textContent = 'API 키를 지웠어요.'; return; }
+    $('autoStatus').textContent = '키 확인 중…';
+    fetchPlaylistIds().then(function(ids){
+      S.pool = ids; S.poolDate = today(); save(); renderTopicCounts();
+      $('autoStatus').textContent = '키가 잘 작동해요. 채널 영상 ' + ids.length + '개를 불러왔어요.';
+      // pull chapters for videos already queued but not yet watched
+      S.videos.forEach(function(v){
+        if(v.auto && !(v.chapters && v.chapters.length) && !(v.watchedTo > 0)){
+          apiInfo(v.id).then(function(r){ if(r.chapters && r.chapters.length){ v.chapters = r.chapters; save(); renderParent(); } });
+        }
+      });
+    }).catch(function(e){ $('autoStatus').className = 'status err'; $('autoStatus').textContent = '키 오류: ' + e.message; });
+  });
+  $('refreshBtn').addEventListener('click', function(){
+    $('autoStatus').className = 'status'; $('autoStatus').textContent = '불러오는 중…';
+    autoMsg = '';
+    refreshPool(true).then(function(){
+      renderTopicCounts();
+      $('autoStatus').textContent = autoMsg || ('채널 영상 ' + S.pool.length + '개를 확인했어요.');
+    });
+  });
+  $('extraBtn').addEventListener('click', function(){
+    S.allowDate = today(); save();
+    $('setStatus').textContent = '오늘 한 편 더 볼 수 있게 열어뒀어요.';
+  });
+
+  // duration/title probe
+  function probe(id){
+    return new Promise(function(resolve){
+      if(!ytReady){ resolve({dur:0, title:'', err:'api'}); return; }
+      var pid = probeDiv();
+      var p, done = false;
+      function fin(r){ if(done) return; done = true; try{ p.destroy(); }catch(e){} var el = $(pid); if(el) el.remove(); resolve(r); }
+      function grab(){ var d = 0, t = ''; try{ d = p.getDuration(); t = (p.getVideoData() || {}).title || ''; }catch(e){} return {d:d, t:t}; }
+      var vars = baseVars(); vars.mute = 1;
+      p = new YT.Player(pid, {
+        host: YT_HOST, videoId: id, width: 320, height: 180, playerVars: vars,
+        events: {
+          onReady: function(){ var g = grab(); if(g.d > 0) fin({dur:g.d, title:g.t}); else { try{ p.mute(); p.playVideo(); }catch(e){} } },
+          onStateChange: function(e){ if(e.data === 1){ var g = grab(); if(g.d > 0) fin({dur:g.d, title:g.t}); } },
+          onError: function(e){ fin({dur:0, title:'', err:e.data}); }
+        }
+      });
+      setTimeout(function(){ var g = p ? grab() : {d:0,t:''}; fin({dur:g.d, title:g.t}); }, 15000);
+    });
+  }
+
+  $('addBtn').addEventListener('click', function(){
+    var st = $('addStatus'); st.className = 'status';
+    var id = parseId($('inUrl').value);
+    if(!id){ st.className = 'status err'; st.textContent = '유튜브 주소를 확인해 주세요.'; return; }
+    if(S.videos.some(function(v){ return v.id === id; })){ st.className = 'status err'; st.textContent = '이미 추가된 영상이에요.'; return; }
+    var chapters = parseChapters($('inChap').value);
+    var manual = parseTime($('inDur').value);
+    $('addBtn').disabled = true; st.textContent = '영상 정보를 읽는 중…';
+    probe(id).then(function(r){
+      $('addBtn').disabled = false;
+      if(r.err === 101 || r.err === 150){ st.className = 'status err'; st.textContent = '이 영상은 채널 설정상 외부 재생이 막혀 있어서 쓸 수 없어요.'; return; }
+      var dur = manual > 0 ? manual : r.dur;
+      if(!(dur > 0)){ st.className = 'status err'; st.textContent = '영상 길이를 자동으로 못 읽었어요. ‘영상 길이’ 칸에 직접 적고 다시 눌러 주세요.'; return; }
+      var v = {id:id, title:r.title || '', dur:dur, chapters:chapters, watchedTo:0};
+      S.videos.push(v); save();
+      var n = split(v, S.target).length;
+      st.textContent = '추가했어요: ' + (v.title || id) + ' → ' + n + '편으로 나눴어요.';
+      $('inUrl').value = ''; $('inChap').value = ''; $('inDur').value = '';
+      renderParent();
+    });
+  });
+
+  $('diagCopy').addEventListener('click', function(){
+    var ta = $('diagBox'); ta.value = diag.join('\n');
+    var ok = function(){ $('bkStatus').textContent = ''; $('diagCopy').textContent = '복사됨'; };
+    if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ta.value).then(ok, function(){ ta.select(); try{ document.execCommand('copy'); ok(); }catch(e){} });
+    else { ta.select(); try{ document.execCommand('copy'); ok(); }catch(e){} }
+  });
+  $('diagClear').addEventListener('click', function(){ diag = []; try{ localStorage.removeItem('harupyeon.diag'); }catch(e){} $('diagBox').value = ''; });
+  $('copyBtn').addEventListener('click', function(){
+    var ta = $('backup'); ta.value = JSON.stringify(S);
+    var ok = function(){ $('bkStatus').textContent = '복사했어요.'; };
+    if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ta.value).then(ok, function(){ ta.select(); try{ document.execCommand('copy'); ok(); }catch(e){} });
+    else { ta.select(); try{ document.execCommand('copy'); ok(); }catch(e){} }
+  });
+  $('importBtn').addEventListener('click', function(){
+    try{
+      var s = JSON.parse($('backup').value);
+      if(!s || !Array.isArray(s.videos)) throw 0;
+      S = Object.assign(blank(), s); save(); renderParent();
+      $('bkStatus').textContent = '불러왔어요.';
+    }catch(e){ $('bkStatus').textContent = '형식이 올바르지 않아요.'; }
+  });
+
+  // expose for testing
+  window.__harupyeon = {split:split, parseChapters:parseChapters, parseId:parseId, parseTime:parseTime};
+  render();
+})();
+</script>
+</body>
+</html>
