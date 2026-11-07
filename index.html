@@ -41,6 +41,14 @@
   #stage{position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:16px;overflow:hidden}
   #playerHost,#playerHost iframe{position:absolute;inset:0;width:100%;height:100%}
   #tap{position:absolute;inset:0;z-index:2}
+  /* during YouTube ads: leave the bottom-right corner (where "Skip" appears) open for taps */
+  #stage.ad #tap{clip-path:polygon(0 0,100% 0,100% 62%,60% 62%,60% 100%,0 100%)}
+  #stage.ad #ctrl{display:none!important}
+  #adNote,#skipZone{display:none;position:absolute;z-index:4;pointer-events:none}
+  #stage.ad #adNote{display:block;top:calc(12px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);
+    background:rgba(0,0,0,.6);color:#fff;font-size:15px;padding:8px 14px;border-radius:999px;white-space:nowrap}
+  #stage.ad #skipZone{display:flex;right:0;bottom:0;width:40%;height:38%;border:3px dashed rgba(255,255,255,.55);
+    border-radius:16px 0 0 0;align-items:flex-start;justify-content:flex-start;padding:8px;color:rgba(255,255,255,.8);font-size:13px}
   #stage.live{position:fixed;inset:0;width:100vw;height:100vh;height:100dvh;aspect-ratio:auto;border-radius:0;z-index:100}
   #ctrl{position:absolute;left:0;right:0;bottom:0;z-index:3;display:none;align-items:center;gap:12px;
     padding:16px calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
@@ -108,6 +116,8 @@
         <div id="playerHost"><div id="player"></div></div>
         <div id="tap"></div>
         <div id="startHint">▶ 화면을 눌러요</div>
+        <div id="adNote">광고가 끝나면 시작해요</div>
+        <div id="skipZone">‘건너뛰기’는 여기서 눌러요</div>
         <div id="ctrl">
           <button id="ppBtn">⏸</button>
           <div class="rem" id="rem"></div>
@@ -460,6 +470,7 @@
     destroyPlayer();
     playerKey = key; finished = false;
     curr = {v:n.v, seg:n.seg, startAt:startAt, ready:false};
+    resetTrack();
     var vars = baseVars();
     vars.start = Math.floor(startAt);
     vars.end = Math.ceil(n.seg.e);
@@ -482,17 +493,47 @@
     if(!curr) return;
     if(e.data === YT.PlayerState.PLAYING){ $('startHint').classList.remove('show'); $('ppBtn').textContent = '⏸'; }
     if(e.data === YT.PlayerState.PAUSED){ $('ppBtn').textContent = '▶'; }
-    if(e.data === YT.PlayerState.ENDED){ finish(); }
+    // only count it as finished if the real video actually got near the end of today's part
+    if(e.data === YT.PlayerState.ENDED && lastT !== null && lastT >= curr.seg.e - 20){ finish(); }
   }
 
+  // --- ad-aware progress tracking ---
+  // lastT = last trusted position in the real video. Ads make the reported time/duration jump or freeze,
+  // so those readings are ignored (no false "finished", no resume point saved inside an ad).
+  var lastT = null, lastAdv = 0, okSince = 0, userPaused = false, adMode = false;
+  function resetTrack(){ lastT = null; lastAdv = Date.now(); okSince = 0; userPaused = false; setAd(false); }
+  function setAd(on){
+    if(adMode === on) return;
+    adMode = on;
+    $('stage').classList.toggle('ad', on);
+    if(on) $('startHint').classList.remove('show');
+  }
   function tick(){
     if(!player || !curr || !player.getCurrentTime) return;
-    var t = player.getCurrentTime();
-    if(t >= curr.seg.e - 0.4){ finish(); return; }
-    $('rem').textContent = '남은 시간 ' + fmt(curr.seg.e - Math.max(t, curr.seg.s));
-    var now = Date.now();
-    if(now - lastSave > 5000 && t > curr.seg.s){
-      lastSave = now; S.resume = {vid:curr.v.id, t:t}; save();
+    var t = 0, d = 0, st = -1, now = Date.now();
+    try{ t = player.getCurrentTime() || 0; d = player.getDuration() || 0; st = player.getPlayerState(); }catch(e){ return; }
+    var durMismatch = d > 0 && curr.v.dur > 0 && Math.abs(d - curr.v.dur) > 5;
+    var expected = lastT === null ? curr.startAt : lastT;
+    var consistent = t >= expected - 1.5 && t <= expected + 6;
+    var good = !durMismatch && consistent && t > 0;
+    if(good){
+      if(lastT === null || t > lastT + 0.05){ lastAdv = now; }
+      lastT = Math.max(lastT === null ? t : lastT, t);
+      okSince = okSince || now;
+    } else {
+      okSince = 0;
+      // not an ad, just an unexpected jump that stays steady for a few seconds → accept as new position
+      if(!durMismatch && t > curr.seg.s - 1 && t < curr.seg.e + 1){
+        curr._jump = curr._jump && Math.abs(t - curr._jump.t - (now - curr._jump.at)/1000) < 2 ? curr._jump : {t:t, at:now};
+        if(now - curr._jump.at > 4000){ lastT = t; lastAdv = now; curr._jump = null; }
+      }
+    }
+    var noProg = now - lastAdv;
+    setAd(durMismatch || (!userPaused && ((st === 1 && noProg > 2500) || (st === -1 && noProg > 4000))));
+    if(!adMode && lastT !== null && lastT >= curr.seg.e - 0.4){ finish(); return; }
+    $('rem').textContent = adMode ? '광고 중' : '남은 시간 ' + fmt(curr.seg.e - Math.max(lastT === null ? curr.startAt : lastT, curr.seg.s));
+    if(!adMode && lastT !== null && now - lastSave > 5000 && lastT > curr.seg.s){
+      lastSave = now; S.resume = {vid:curr.v.id, t:lastT}; save();
     }
   }
 
@@ -506,6 +547,7 @@
     }catch(e){}
     try{ if(screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(function(){}); }catch(e){}
     showCtrl();
+    lastAdv = Date.now(); userPaused = false;
     clearInterval(ticker); ticker = setInterval(tick, 500);
     // if autoplay was blocked, ask for one more tap
     setTimeout(function(){
@@ -513,6 +555,7 @@
     }, 1500);
   }
   function exitLive(){
+    setAd(false);
     $('stage').classList.remove('live');
     $('startHint').classList.remove('show');
     $('ctrl').classList.remove('show');
@@ -555,16 +598,17 @@
   $('playBtn').addEventListener('click', play);
   $('tap').addEventListener('click', function(){
     if(!$('stage').classList.contains('live')){ play(); return; }
-    if($('startHint').classList.contains('show')){ try{ player.playVideo(); }catch(e){} $('startHint').classList.remove('show'); }
+    try{ var ps = player.getPlayerState(); if(ps === -1 || ps === 5 || (ps === 2 && !userPaused)){ userPaused = false; lastAdv = Date.now(); player.playVideo(); } }catch(e){}
+    $('startHint').classList.remove('show');
     showCtrl();
   });
   $('ppBtn').addEventListener('click', function(){
     if(!player) return;
-    try{ if(player.getPlayerState() === 1) player.pauseVideo(); else player.playVideo(); }catch(e){}
+    try{ if(player.getPlayerState() === 1){ userPaused = true; player.pauseVideo(); } else { userPaused = false; lastAdv = Date.now(); player.playVideo(); } }catch(e){}
     showCtrl();
   });
   $('closeBtn').addEventListener('click', function(){
-    try{ player.pauseVideo(); if(curr){ S.resume = {vid:curr.v.id, t:player.getCurrentTime()}; save(); } }catch(e){}
+    try{ userPaused = true; player.pauseVideo(); if(curr && lastT !== null && !adMode){ S.resume = {vid:curr.v.id, t:lastT}; save(); } }catch(e){}
     exitLive(); render();
   });
   $('celebrateOk').addEventListener('click', function(){ $('celebrate').classList.remove('show'); });
