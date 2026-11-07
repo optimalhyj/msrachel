@@ -190,6 +190,11 @@
       <h2>영상 목록</h2>
       <div id="list"></div>
 
+      <h2>문제 진단 기록</h2>
+      <p class="help">영상이 이상하게 동작하면 ‘복사’를 눌러 Claude에게 붙여넣어 주세요. 플레이어가 보고한 상태가 기록돼 있어요. <span id="verLabel"></span></p>
+      <textarea id="diagBox" readonly spellcheck="false" style="font-size:12px;min-height:90px"></textarea>
+      <div class="row"><button class="btn ghost" id="diagCopy">복사</button><button class="btn ghost" id="diagClear">기록 지우기</button></div>
+
       <h2>백업 / 다른 기기로 옮기기</h2>
       <p class="help">기록은 이 기기 브라우저에만 저장돼요. 다른 기기로 옮기려면 아래 내용을 복사해서 그 기기의 같은 칸에 붙여넣고 ‘불러오기’를 누르세요.</p>
       <textarea id="backup" spellcheck="false"></textarea>
@@ -506,7 +511,14 @@
     if(adMode === on) return;
     adMode = on;
     $('stage').classList.toggle('ad', on);
-    if(on) $('startHint').classList.remove('show');
+  }
+  // diagnostics: what the YouTube player reported, so problems can be sent to Claude
+  var VERSION = '2026-11-08b', diag = [], diagLast = '';
+  try{ diag = JSON.parse(localStorage.getItem('harupyeon.diag')) || []; }catch(e){}
+  function dlog(msg){
+    var d = new Date(), ts = d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0') + ':' + String(d.getSeconds()).padStart(2,'0');
+    diag.push(ts + ' ' + msg); if(diag.length > 300) diag = diag.slice(-300);
+    try{ localStorage.setItem('harupyeon.diag', JSON.stringify(diag)); }catch(e){}
   }
   function tick(){
     if(!player || !curr || !player.getCurrentTime) return;
@@ -514,25 +526,30 @@
     try{ t = player.getCurrentTime() || 0; d = player.getDuration() || 0; st = player.getPlayerState(); }catch(e){ return; }
     var durMismatch = d > 0 && curr.v.dur > 0 && Math.abs(d - curr.v.dur) > 5;
     var expected = lastT === null ? curr.startAt : lastT;
-    var consistent = t >= expected - 1.5 && t <= expected + 6;
-    var good = !durMismatch && consistent && t > 0;
+    var good = !durMismatch && t >= expected - 1.5 && t <= expected + 6;
     if(good){
-      if(lastT === null || t > lastT + 0.05){ lastAdv = now; }
-      lastT = Math.max(lastT === null ? t : lastT, t);
-      okSince = okSince || now;
-    } else {
-      okSince = 0;
-      // not an ad, just an unexpected jump that stays steady for a few seconds → accept as new position
-      if(!durMismatch && t > curr.seg.s - 1 && t < curr.seg.e + 1){
-        curr._jump = curr._jump && Math.abs(t - curr._jump.t - (now - curr._jump.at)/1000) < 2 ? curr._jump : {t:t, at:now};
-        if(now - curr._jump.at > 4000){ lastT = t; lastAdv = now; curr._jump = null; }
-      }
+      if(lastT === null) lastT = t;
+      else if(t > lastT + 0.05){ lastT = t; lastAdv = now; }
+    } else if(!durMismatch && t > curr.seg.s - 1 && t < curr.seg.e + 1){
+      // unexpected jump that then plays on steadily for a few seconds → accept as the new position
+      curr._jump = curr._jump && Math.abs(t - curr._jump.t - (now - curr._jump.at)/1000) < 2 ? curr._jump : {t:t, at:now};
+      if(now - curr._jump.at > 4000){ lastT = t; lastAdv = now; curr._jump = null; dlog('accept-jump ' + t.toFixed(1)); }
     }
-    var noProg = now - lastAdv;
-    setAd(durMismatch || (!userPaused && ((st === 1 && noProg > 2500) || (st === -1 && noProg > 4000))));
-    if(!adMode && lastT !== null && lastT >= curr.seg.e - 0.4){ finish(); return; }
-    $('rem').textContent = adMode ? '광고 중' : '남은 시간 ' + fmt(curr.seg.e - Math.max(lastT === null ? curr.startAt : lastT, curr.seg.s));
-    if(!adMode && lastT !== null && now - lastSave > 5000 && lastT > curr.seg.s){
+    // after an ad the player sometimes restarts the video from the beginning → jump back to where we were
+    if(!durMismatch && st === 1 && t < curr.seg.s - 5 && now - (curr._seekAt||0) > 3000){
+      curr._seekAt = now; dlog('seek-fix ' + t.toFixed(1) + ' -> ' + (lastT !== null ? lastT : curr.startAt));
+      try{ player.seekTo(lastT !== null ? lastT : curr.startAt, true); }catch(e){}
+    }
+    // block the screen only while the real video is confirmed to be playing; otherwise (ad, loading)
+    // open the bottom-right corner so "Skip" can be tapped
+    var mainPlaying = good && st === 1 && now - lastAdv < 1500;
+    setAd(!mainPlaying && !userPaused);
+    if(mainPlaying) $('startHint').classList.remove('show');
+    var sig = 'st=' + st + ' d=' + Math.round(d) + ' ad=' + (adMode ? 1 : 0) + ' good=' + (good ? 1 : 0);
+    if(sig !== diagLast || now % 10000 < 500){ diagLast = sig; dlog(sig + ' t=' + t.toFixed(1) + ' last=' + (lastT === null ? '-' : lastT.toFixed(1))); }
+    if(lastT !== null && lastT >= curr.seg.e - 0.4){ dlog('finish'); finish(); return; }
+    $('rem').textContent = adMode ? '광고 또는 불러오는 중' : '남은 시간 ' + fmt(curr.seg.e - Math.max(lastT === null ? curr.startAt : lastT, curr.seg.s));
+    if(mainPlaying && now - lastSave > 5000 && lastT > curr.seg.s){
       lastSave = now; S.resume = {vid:curr.v.id, t:lastT}; save();
     }
   }
@@ -548,6 +565,7 @@
     try{ if(screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(function(){}); }catch(e){}
     showCtrl();
     lastAdv = Date.now(); userPaused = false;
+    dlog('play ' + curr.v.id + ' seg ' + curr.seg.s + '-' + curr.seg.e + ' start ' + curr.startAt + ' v' + VERSION);
     clearInterval(ticker); ticker = setInterval(tick, 500);
     // if autoplay was blocked, ask for one more tap
     setTimeout(function(){
@@ -703,6 +721,8 @@
     $('inOrder').value = S.order;
     $('inKey').value = S.apiKey || '';
     renderTopicCounts();
+    $('diagBox').value = diag.join('\n');
+    $('verLabel').textContent = '(버전 ' + VERSION + ')';
     $('backup').value = JSON.stringify(S);
     var n = nextUp(), html = '';
     if(!S.videos.length) html = '<p class="help">아직 추가한 영상이 없어요.</p>';
@@ -834,6 +854,13 @@
     });
   });
 
+  $('diagCopy').addEventListener('click', function(){
+    var ta = $('diagBox'); ta.value = diag.join('\n');
+    var ok = function(){ $('bkStatus').textContent = ''; $('diagCopy').textContent = '복사됨'; };
+    if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ta.value).then(ok, function(){ ta.select(); try{ document.execCommand('copy'); ok(); }catch(e){} });
+    else { ta.select(); try{ document.execCommand('copy'); ok(); }catch(e){} }
+  });
+  $('diagClear').addEventListener('click', function(){ diag = []; try{ localStorage.removeItem('harupyeon.diag'); }catch(e){} $('diagBox').value = ''; });
   $('copyBtn').addEventListener('click', function(){
     var ta = $('backup'); ta.value = JSON.stringify(S);
     var ok = function(){ $('bkStatus').textContent = '복사했어요.'; };
